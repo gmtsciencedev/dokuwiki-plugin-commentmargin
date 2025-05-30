@@ -1,0 +1,6 @@
+base   commentmargin
+author Raynald de Lahondès
+date   2025-05-30
+name   CommentMargin Plugin
+desc   Add comment to a document in the margin without modifying the original text.
+url    https://github.com/votreutilisateur/commentmargin
