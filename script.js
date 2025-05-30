@@ -9,13 +9,13 @@ document.addEventListener('DOMContentLoaded', () => {
         document.body.appendChild(sidebar);
     }
 
-    const injectHighlight = (anchorId, selectedText, before, after) => {
-        console.log("Injecting:", { anchorId, selectedText, before, after });
+    const injectHighlight = (anchorId, selectedText, before, after, selectedHTML = null) => {
+        console.log("Injecting:", { anchorId, selectedText, before, after, selectedHTML });
 
         const beforeSafe = before || '';
         const afterSafe = after || '';
 
-        // Optional: remove the embedded JSON once used
+        // --- STEP 0: remove the embedded JSON once used
         const scriptTag = document.getElementById('commentmargin-data');
         if (scriptTag) {
             try {
@@ -25,7 +25,90 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
 
-        // Step 1: Flatten all visible text nodes
+        // --- STEP 1: Try selectedHTML-based injection ---
+        if (selectedHTML) {
+            const html = document.body.innerHTML;
+
+            const encodedHTML = selectedHTML
+                .replace(/&/g, '&amp;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#039;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;');
+
+            const index = html.indexOf(selectedHTML);
+            const indexEncoded = html.indexOf(encodedHTML);
+
+            const htmlToFind = index !== -1 ? selectedHTML : (indexEncoded !== -1 ? encodedHTML : null);
+            const foundAt = index !== -1 ? index : (indexEncoded !== -1 ? indexEncoded : -1);
+
+            if (foundAt !== -1) {
+                const marker = `<span id="${anchorId}" class="comment-highlight">${htmlToFind}</span>`;
+                document.body.innerHTML = html.slice(0, foundAt) + marker + html.slice(foundAt + htmlToFind.length);
+                return document.getElementById(anchorId);
+            }
+
+            // Fallback: use DOM fuzzy search on textContent
+            const temp = document.createElement("div");
+            temp.innerHTML = selectedHTML;
+            const textToFind = temp.textContent.trim();
+
+            const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+            let fullText = '';
+            const nodes = [];
+
+            while (walker.nextNode()) {
+                const node = walker.currentNode;
+                const parentTag = node.parentNode?.nodeName?.toUpperCase();
+                if (parentTag === "SCRIPT" || parentTag === "STYLE") continue;
+
+                nodes.push({ node, start: fullText.length });
+                fullText += node.nodeValue;
+            }
+
+            const idx = fullText.indexOf(textToFind);
+            if (idx !== -1) {
+                let startNode = null, endNode = null;
+                let startOffset = 0, endOffset = 0;
+                let remainingStart = idx;
+                let remainingEnd = idx + textToFind.length;
+
+                for (const { node } of nodes) {
+                    const len = node.nodeValue.length;
+                    if (!startNode && remainingStart < len) {
+                        startNode = node;
+                        startOffset = remainingStart;
+                    }
+                    remainingStart -= len;
+
+                    if (!endNode && remainingEnd <= len) {
+                        endNode = node;
+                        endOffset = remainingEnd;
+                        break;
+                    }
+                    remainingEnd -= len;
+                }
+
+                if (startNode && endNode) {
+                    const range = document.createRange();
+                    range.setStart(startNode, startOffset);
+                    range.setEnd(endNode, endOffset);
+
+                    const span = document.createElement("span");
+                    span.id = anchorId;
+                    span.className = "comment-highlight";
+                    span.textContent = textToFind;
+
+                    range.deleteContents();
+                    range.insertNode(span);
+                    return span;
+                }
+            }
+
+            console.warn("injectHighlight: selectedHTML not found using HTML or fallback text match");
+        }
+
+        // --- STEP 2: Text-based match ---
         const root = document.body;
         const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
         const textNodes = [];
@@ -40,7 +123,6 @@ document.addEventListener('DOMContentLoaded', () => {
             fullText += node.nodeValue;
         }
 
-        // Step 2: Try matching the full string
         let index = fullText.indexOf(selectedText);
         if (index === -1) {
             console.warn("injectHighlight: selectedText not found in flattened content");
@@ -84,7 +166,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
 
-        // Step 3: Map offsets back to nodes
+        // --- STEP 3: Map offsets back to nodes ---
         let startNode = null, endNode = null;
         let startOffset = 0, endOffset = 0;
         let remainingStart = index;
@@ -208,17 +290,24 @@ document.addEventListener('DOMContentLoaded', () => {
     window.addEventListener('resize', () => {
         commentBoxes.forEach(({ anchorId, element }) => alignCommentBoxToHighlight(anchorId, element));
     });
-    
-    const postComment = async (pageId, selected, before, after, comment) => {
+
+    const postComment = async (pageId, selected, before, after, comment, selectedHTML) => {
         // Try to inject temporarily to validate selection
-        const testSpan = injectHighlight("__preview__", selected, before, after);
+        const testSpan = injectHighlight("__preview__", selected, before, after, selectedHTML);
         if (!testSpan) {
-            alert(t("js_selection_not_found") || "Le texte sélectionné ne peut pas être localisé dans la page. Veuillez affiner votre sélection.");
+            alert(t("js_selection_not_found"));
             return; // Abort submission
         }
         testSpan.remove(); // Clean up the temporary preview
 
-        const params = new URLSearchParams({ id: pageId, selected, before, after, comment });
+        const params = new URLSearchParams({
+            id: pageId,
+            selected,
+            before,
+            after,
+            comment,
+            selected_html: selectedHTML
+        });
 
         try {
             const response = await fetch(DOKU_BASE + "lib/plugins/commentmargin/ajax.php", {
@@ -258,7 +347,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (Array.isArray(COMMENTMARGIN_DATA)) {
         COMMENTMARGIN_DATA.forEach(comment => {
-            const span = injectHighlight(comment.anchor_id, comment.selected, comment.before || null, comment.after || null);
+            const span = injectHighlight(comment.anchor_id, comment.selected, comment.before || null, comment.after || null, comment.selected_html || null);
             if (span) {
                 addToSidebar(comment.anchor_id, comment.selected, comment.text);
             }
@@ -286,27 +375,50 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        const range = selection.getRangeAt(0);
-        const container = range.commonAncestorContainer.nodeType === 1
-            ? range.commonAncestorContainer
-            : range.commonAncestorContainer.parentNode;
+        // Capture HTML instead of just text
+        const getSelectedHTML = () => {
+            if (selection.rangeCount === 0) return '';
+            const range = selection.getRangeAt(0);
+            const container = document.createElement("div");
+            container.appendChild(range.cloneContents());
+            return container.innerHTML;
+        };
 
-        const fullText = container.textContent;
-        const index = fullText.indexOf(selectedText);
-
-        if (index === -1) {
-            alert("Could not determine selection position in the text.");
+        const selectedHTML = getSelectedHTML().trim();
+        if (!selectedHTML) {
+            alert("Could not capture HTML selection.");
             return;
         }
 
-        const contextSize = 20;
-        const before = fullText.slice(Math.max(0, index - contextSize), index);
-        const after = fullText.slice(index + selectedText.length, index + selectedText.length + contextSize);
+        let before = "";
+        let after = "";
+
+        try {
+            const range = selection.getRangeAt(0);
+            const container = range.commonAncestorContainer.nodeType === 1
+                ? range.commonAncestorContainer
+                : range.commonAncestorContainer.parentNode;
+
+            const fullText = container.textContent;
+            const index = fullText.indexOf(selectedText);
+
+            if (index !== -1) {
+                const contextSize = 20;
+                before = fullText.slice(Math.max(0, index - contextSize), index);
+                after = fullText.slice(index + selectedText.length, index + selectedText.length + contextSize);
+            } else {
+                console.warn("Text-based context could not be computed, relying on selectedHTML only.");
+            }
+        } catch (err) {
+            console.warn("Error while computing before/after:", err);
+        }
 
         const comment = prompt(t("js_enter_comment") + "\n" + selectedText);
         if (!comment) return;
 
         const pageId = window.DOKU_ID;
-        postComment(pageId, selectedText, before, after, comment);
+        postComment(pageId, selectedText, before, after, comment, selectedHTML);
     });
+
+
 });

@@ -14,6 +14,7 @@ $selected = trim($_REQUEST['selected']);
 $comment = trim($_REQUEST['comment']);
 $before = trim($_REQUEST['before'] ?? '');
 $after = trim($_REQUEST['after'] ?? '');
+$selected_html = trim($_REQUEST['selected_html'] ?? '');
 
 if (!$selected || !$comment) {
     http_response_code(400);
@@ -25,6 +26,7 @@ $anchor = 'comm_' . substr(md5($selected . $comment . microtime()), 0, 8);
 $entry = [
     'anchor_id' => $anchor,
     'selected' => $selected,
+    'selected_html' => $selected_html,
     'text' => $comment,
     'author' => $_SERVER['REMOTE_USER'],
     'timestamp' => date('c'),

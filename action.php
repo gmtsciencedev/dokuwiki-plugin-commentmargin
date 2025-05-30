@@ -50,7 +50,8 @@ class action_plugin_commentmargin extends DokuWiki_Action_Plugin {
             'js_enter_comment' => $this->getLang('js_enter_comment'),
             'js_saved_success' => $this->getLang('js_saved_success'),
             'js_error' => $this->getLang('js_error'),
-            'js_unknown_error' => $this->getLang('js_unknown_error')
+            'js_unknown_error' => $this->getLang('js_unknown_error'),
+            'js_selection_not_found' => $this->getLang('js_selection_not_found'),
         ];
 
         // Inject language and ID
@@ -80,9 +81,9 @@ class action_plugin_commentmargin extends DokuWiki_Action_Plugin {
             // Remplace la première occurrence uniquement
             $html = preg_replace('/' . preg_quote($needle, '/') . '/', $replacement, $html, 1);
         }
-        $html .= '<script id="commentmargin-data" type="application/json">' .
-            json_encode($comments, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG) .
-            '</script>';
+        $html .= '<script id="commentmargin-data" type="application/json">'
+            . json_encode($comments, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)
+            . '</script>';
     }
 
     /**
