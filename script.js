@@ -19,7 +19,6 @@ document.addEventListener('DOMContentLoaded', () => {
             if (originalText.trim()) {
                 const span = document.createElement("span");
                 span.className = "comment-highlight";
-                //span.id = anchorId + "_" + spans.length;
                 span.id = spans.length === 0 ? anchorId : `${anchorId}_${spans.length}`;
                 span.textContent = originalText;
 
@@ -28,12 +27,33 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
 
-        // Now insert back into the original range
+        // Insert each child node of the cloned content back in reverse order
         range.deleteContents();
-        range.insertNode(contents);
+        const fragmentChildren = Array.from(contents.childNodes);
+        for (let i = fragmentChildren.length - 1; i >= 0; i--) {
+            range.insertNode(fragmentChildren[i]);
+        }
+
         return spans;
     }
 
+    function findMatchingNodesFromHTML(fragment, root) {
+        const fragText = fragment.textContent.trim().replace(/\s+/g, ' ');
+        const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT);
+
+        while (walker.nextNode()) {
+            const candidate = walker.currentNode.cloneNode(true);
+            const text = candidate.textContent.trim().replace(/\s+/g, ' ');
+            if (text === fragText) {
+                return {
+                    startNode: walker.currentNode,
+                    endNode: walker.currentNode
+                };
+            }
+        }
+
+        return null;
+    }
 
 
     const injectHighlight = (anchorId, selectedText, before, after, selectedHTML = null) => {
@@ -70,15 +90,30 @@ document.addEventListener('DOMContentLoaded', () => {
             const foundAt = index !== -1 ? index : (indexEncoded !== -1 ? indexEncoded : -1);
 
             if (foundAt !== -1) {
-                const selection = window.getSelection();
-                if (!selection.rangeCount) {
-                    console.warn("injectHighlight: no active selection range");
+                // Create a DOM parser container from selectedHTML
+                const tempDiv = document.createElement("div");
+                tempDiv.innerHTML = htmlToFind;
+                const fragment = tempDiv.cloneNode(true);
+
+                // Try to find the nodes in the actual document that match these HTML elements
+                const match = findMatchingNodesFromHTML(fragment, document.body);
+                if (!match) {
+                    console.warn("injectHighlight: failed to map selectedHTML to live DOM nodes");
                     return null;
                 }
 
-                const range = selection.getRangeAt(0);
-                const spans = injectSpansInRange(range, anchorId);
+                const { startNode, endNode } = match;
+                if (!startNode || !endNode) {
+                    console.warn("injectHighlight: could not find full range for selectedHTML");
+                    return null;
+                }
 
+                // Create a range and use injectSpansInRange
+                const range = document.createRange();
+                range.setStartBefore(startNode);
+                range.setEndAfter(endNode);
+
+                const spans = injectSpansInRange(range, anchorId);
                 return spans[0] || null;
             }
 
