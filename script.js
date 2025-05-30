@@ -208,7 +208,16 @@ document.addEventListener('DOMContentLoaded', () => {
     window.addEventListener('resize', () => {
         commentBoxes.forEach(({ anchorId, element }) => alignCommentBoxToHighlight(anchorId, element));
     });
+    
     const postComment = async (pageId, selected, before, after, comment) => {
+        // Try to inject temporarily to validate selection
+        const testSpan = injectHighlight("__preview__", selected, before, after);
+        if (!testSpan) {
+            alert(t("js_selection_not_found") || "Le texte sélectionné ne peut pas être localisé dans la page. Veuillez affiner votre sélection.");
+            return; // Abort submission
+        }
+        testSpan.remove(); // Clean up the temporary preview
+
         const params = new URLSearchParams({ id: pageId, selected, before, after, comment });
 
         try {
@@ -219,12 +228,8 @@ document.addEventListener('DOMContentLoaded', () => {
             });
 
             const result = await response.json();
-            //if (result.success && result.anchor_id) {
-            //    injectHighlight(result.anchor_id, selected, before, after);
-            //    addToSidebar(result.anchor_id, selected, comment);
-            //    //alert(t("js_saved_success"));
             if (result.success) {
-                location.reload(); // force a full reload to re-read comment from backend
+                location.reload(); // reload to reflect the newly saved comment
             } else {
                 alert(t("js_error") + ": " + (result.error || t("js_unknown_error")));
             }
