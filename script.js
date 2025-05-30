@@ -9,82 +9,139 @@ document.addEventListener('DOMContentLoaded', () => {
         document.body.appendChild(sidebar);
     }
 
-const injectHighlight = (anchorId, selectedText, before, after) => {
-    console.log("Injecting:", { anchorId, selectedText, before, after });
-
-    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
-    const candidates = [];
-
-    while (walker.nextNode()) {
-        const node = walker.currentNode;
-        const text = node.nodeValue;
-        let index = -1;
-        while ((index = text.indexOf(selectedText, index + 1)) !== -1) {
-            candidates.push({ node, index });
-        }
-    }
-
-    console.log("Found candidates:", candidates.length);
-
-    const tryInsert = ({ node, index }) => {
-        const fullText = node.nodeValue;
-        const start = index;
-        const end = index + selectedText.length;
+    const injectHighlight = (anchorId, selectedText, before, after) => {
+        console.log("Injecting:", { anchorId, selectedText, before, after });
 
         const beforeSafe = before || '';
         const afterSafe = after || '';
 
-        const actualBefore = fullText.slice(Math.max(0, start - beforeSafe.length), start);
-        const actualAfter = fullText.slice(end, end + afterSafe.length);
-
-        const matchBefore = beforeSafe === '' || actualBefore === beforeSafe;
-        const matchAfter = afterSafe === '' || actualAfter === afterSafe;
-
-        if (matchBefore && matchAfter) {
-            const range = document.createRange();
-            range.setStart(node, start);
-            range.setEnd(node, end);
-
-            const span = document.createElement("span");
-            span.id = anchorId;
-            span.className = "comment-highlight";
-            span.textContent = selectedText;
-
-            range.deleteContents();
-            range.insertNode(span);
-            return span;
+        // Optional: remove the embedded JSON once used
+        const scriptTag = document.getElementById('commentmargin-data');
+        if (scriptTag) {
+            try {
+                scriptTag.remove();
+            } catch (err) {
+                console.warn("injectHighlight: couldn't remove script tag", err);
+            }
         }
 
-        return null;
-    };
+        // Step 1: Flatten all visible text nodes
+        const root = document.body;
+        const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+        const textNodes = [];
+        let fullText = '';
 
+        while (walker.nextNode()) {
+            const node = walker.currentNode;
+            const parentTag = node.parentNode?.nodeName?.toUpperCase();
+            if (parentTag === "SCRIPT" || parentTag === "STYLE") continue;
 
-    for (const cand of candidates) {
-        const res = tryInsert(cand);
-        if (res) return res;
-    }
+            textNodes.push({ node, start: fullText.length });
+            fullText += node.nodeValue;
+        }
 
-    // Fallback path
-    console.warn("Fallback mode triggered for", anchorId);
-    for (const { node, index } of candidates) {
+        // Step 2: Try matching the full string
+        let index = fullText.indexOf(selectedText);
+        if (index === -1) {
+            console.warn("injectHighlight: selectedText not found in flattened content");
+            return null;
+        }
+
+        const actualBefore = fullText.slice(Math.max(0, index - beforeSafe.length), index);
+        const actualAfter = fullText.slice(index + selectedText.length, index + selectedText.length + afterSafe.length);
+
+        const relaxedMatchBefore = !beforeSafe || actualBefore.trim().includes(beforeSafe.trim());
+        const relaxedMatchAfter = !afterSafe || actualAfter.trim().includes(afterSafe.trim());
+
+        console.log("Match context:", {
+            index,
+            actualBefore,
+            actualAfter,
+            expectedBefore: beforeSafe,
+            expectedAfter: afterSafe,
+            relaxedMatchBefore,
+            relaxedMatchAfter
+        });
+
+        if (!relaxedMatchBefore || !relaxedMatchAfter) {
+            console.warn("injectHighlight: relaxed context mismatch, attempting fallback");
+
+            const allOccurrences = [];
+            let pos = 0;
+            while (pos < fullText.length) {
+                const i = fullText.indexOf(selectedText, pos);
+                if (i === -1) break;
+                allOccurrences.push(i);
+                pos = i + selectedText.length;
+            }
+
+            if (allOccurrences.length === 1) {
+                console.info("injectHighlight: using fallback injection due to unique match");
+                index = allOccurrences[0];
+            } else {
+                console.warn("injectHighlight: ambiguous fallback match — multiple matches");
+                return null;
+            }
+        }
+
+        // Step 3: Map offsets back to nodes
+        let startNode = null, endNode = null;
+        let startOffset = 0, endOffset = 0;
+        let remainingStart = index;
+        let remainingEnd = index + selectedText.length;
+
+        for (const { node } of textNodes) {
+            const len = node.nodeValue.length;
+
+            if (!startNode && remainingStart < len) {
+                startNode = node;
+                startOffset = remainingStart;
+            }
+            remainingStart -= len;
+
+            if (!endNode && remainingEnd <= len) {
+                endNode = node;
+                endOffset = remainingEnd;
+                break;
+            }
+            remainingEnd -= len;
+        }
+
+        console.log("Highlight range:", {
+            startNode: startNode?.nodeValue?.slice(0, 30) + "...",
+            startOffset,
+            endNode: endNode?.nodeValue?.slice(0, 30) + "...",
+            endOffset
+        });
+
+        if (!startNode || !endNode) {
+            console.warn("injectHighlight: failed to map DOM nodes");
+            return null;
+        }
+
         const range = document.createRange();
-        range.setStart(node, index);
-        range.setEnd(node, index + selectedText.length);
+        try {
+            range.setStart(startNode, startOffset);
+            range.setEnd(endNode, endOffset);
+        } catch (err) {
+            console.error("injectHighlight: error creating range", err);
+            return null;
+        }
 
         const span = document.createElement("span");
         span.id = anchorId;
-        span.className = "comment-highlight fallback";
+        span.className = "comment-highlight";
         span.textContent = selectedText;
 
         range.deleteContents();
         range.insertNode(span);
-        console.log("Fallback match inserted:", span);
         return span;
-    }
+    };
 
-    console.warn("No match found for", anchorId);
-    return null;
-};
+
+
+
+
 
 
 
@@ -177,8 +234,25 @@ const injectHighlight = (anchorId, selectedText, before, after) => {
     };
 
     // Load pre-existing comments if available
-    if (Array.isArray(window.COMMENTMARGIN_DATA)) {
-        window.COMMENTMARGIN_DATA.forEach(comment => {
+    function loadCommentData() {
+        const raw = document.getElementById('commentmargin-data')?.textContent;
+        if (!raw) {
+            console.warn("No comment data found");
+            return [];
+        }
+
+        try {
+            return JSON.parse(raw);
+        } catch (err) {
+            console.error("Failed to parse comment data:", err);
+            return [];
+        }
+    }
+
+    const COMMENTMARGIN_DATA = loadCommentData();
+
+    if (Array.isArray(COMMENTMARGIN_DATA)) {
+        COMMENTMARGIN_DATA.forEach(comment => {
             const span = injectHighlight(comment.anchor_id, comment.selected, comment.before || null, comment.after || null);
             if (span) {
                 addToSidebar(comment.anchor_id, comment.selected, comment.text);
@@ -186,25 +260,43 @@ const injectHighlight = (anchorId, selectedText, before, after) => {
         });
     }
 
+    // Immediately clean up to prevent polluting textContent
+    //const scriptTags = document.querySelectorAll('script');
+    //scriptTags.forEach(script => {
+    //    if (script.textContent.includes('window.COMMENTMARGIN_DATA')) {
+    //        script.remove();
+    //    }
+    //});
+
     const btn = document.getElementById('commentmargin-add-btn');
     if (!btn) return;
 
     btn.addEventListener('click', (e) => {
         e.preventDefault();
+
         const selection = window.getSelection();
         const selectedText = selection.toString().trim();
-        if (selectedText.length === 0) {
+        if (!selectedText) {
             alert(t("js_select_text"));
             return;
         }
 
         const range = selection.getRangeAt(0);
-        const node = range.startContainer;
-        const offset = range.startOffset;
-        const full = node.nodeValue || '';
+        const container = range.commonAncestorContainer.nodeType === 1
+            ? range.commonAncestorContainer
+            : range.commonAncestorContainer.parentNode;
 
-        const before = offset >= 10 ? full.slice(offset - 10, offset) : full.slice(0, offset);
-        const after = full.slice(offset + selectedText.length, offset + selectedText.length + 10);
+        const fullText = container.textContent;
+        const index = fullText.indexOf(selectedText);
+
+        if (index === -1) {
+            alert("Could not determine selection position in the text.");
+            return;
+        }
+
+        const contextSize = 20;
+        const before = fullText.slice(Math.max(0, index - contextSize), index);
+        const after = fullText.slice(index + selectedText.length, index + selectedText.length + contextSize);
 
         const comment = prompt(t("js_enter_comment") + "\n" + selectedText);
         if (!comment) return;

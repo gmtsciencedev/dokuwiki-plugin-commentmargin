@@ -80,7 +80,9 @@ class action_plugin_commentmargin extends DokuWiki_Action_Plugin {
             // Remplace la première occurrence uniquement
             $html = preg_replace('/' . preg_quote($needle, '/') . '/', $replacement, $html, 1);
         }
-        $html .= '<script>window.COMMENTMARGIN_DATA = ' . json_encode($comments, JSON_UNESCAPED_UNICODE) . ';</script>';
+        $html .= '<script id="commentmargin-data" type="application/json">' .
+            json_encode($comments, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG) .
+            '</script>';
     }
 
     /**
