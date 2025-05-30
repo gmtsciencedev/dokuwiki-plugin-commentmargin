@@ -12,6 +12,8 @@ if (!isset($_SERVER['REMOTE_USER']) || auth_quickaclcheck($_REQUEST['id']) < AUT
 $id = cleanID($_REQUEST['id']);
 $selected = trim($_REQUEST['selected']);
 $comment = trim($_REQUEST['comment']);
+$before = trim($_REQUEST['before'] ?? '');
+$after = trim($_REQUEST['after'] ?? '');
 
 if (!$selected || !$comment) {
     http_response_code(400);
@@ -25,7 +27,9 @@ $entry = [
     'selected' => $selected,
     'text' => $comment,
     'author' => $_SERVER['REMOTE_USER'],
-    'timestamp' => date('c')
+    'timestamp' => date('c'),
+    'before' => $before,
+    'after' => $after
 ];
 
 $path = metaFN($id, ".comments");

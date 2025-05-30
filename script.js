@@ -9,19 +9,84 @@ document.addEventListener('DOMContentLoaded', () => {
         document.body.appendChild(sidebar);
     }
 
-    const injectHighlight = (anchorId, selectedText) => {
-        const selection = window.getSelection();
-        if (selection.rangeCount === 0) return;
-        const range = selection.getRangeAt(0);
+const injectHighlight = (anchorId, selectedText, before, after) => {
+    console.log("Injecting:", { anchorId, selectedText, before, after });
+
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+    const candidates = [];
+
+    while (walker.nextNode()) {
+        const node = walker.currentNode;
+        const text = node.nodeValue;
+        let index = -1;
+        while ((index = text.indexOf(selectedText, index + 1)) !== -1) {
+            candidates.push({ node, index });
+        }
+    }
+
+    console.log("Found candidates:", candidates.length);
+
+    const tryInsert = ({ node, index }) => {
+        const fullText = node.nodeValue;
+        const start = index;
+        const end = index + selectedText.length;
+
+        const beforeSafe = before || '';
+        const afterSafe = after || '';
+
+        const actualBefore = fullText.slice(Math.max(0, start - beforeSafe.length), start);
+        const actualAfter = fullText.slice(end, end + afterSafe.length);
+
+        const matchBefore = beforeSafe === '' || actualBefore === beforeSafe;
+        const matchAfter = afterSafe === '' || actualAfter === afterSafe;
+
+        if (matchBefore && matchAfter) {
+            const range = document.createRange();
+            range.setStart(node, start);
+            range.setEnd(node, end);
+
+            const span = document.createElement("span");
+            span.id = anchorId;
+            span.className = "comment-highlight";
+            span.textContent = selectedText;
+
+            range.deleteContents();
+            range.insertNode(span);
+            return span;
+        }
+
+        return null;
+    };
+
+
+    for (const cand of candidates) {
+        const res = tryInsert(cand);
+        if (res) return res;
+    }
+
+    // Fallback path
+    console.warn("Fallback mode triggered for", anchorId);
+    for (const { node, index } of candidates) {
+        const range = document.createRange();
+        range.setStart(node, index);
+        range.setEnd(node, index + selectedText.length);
 
         const span = document.createElement("span");
         span.id = anchorId;
-        span.className = "comment-highlight";
+        span.className = "comment-highlight fallback";
         span.textContent = selectedText;
 
         range.deleteContents();
         range.insertNode(span);
-    };
+        console.log("Fallback match inserted:", span);
+        return span;
+    }
+
+    console.warn("No match found for", anchorId);
+    return null;
+};
+
+
 
     function alignCommentBoxToHighlight(anchorID, commentBox) {
         const highlight = document.getElementById(anchorID);
@@ -31,7 +96,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
         let top = rect.top + scrollTop;
 
-        // Compute cumulative offset if overlapping previous boxes
+        // Avoid overlaps
         let overlapOffset = 0;
         for (const { element } of commentBoxes) {
             if (element === commentBox) continue;
@@ -41,12 +106,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (top + overlapOffset < otherTop + otherHeight &&
                 top + overlapOffset + commentBox.offsetHeight > otherTop) {
-                overlapOffset = otherTop + otherHeight - top + 8; // 8px margin
+                overlapOffset = otherTop + otherHeight - top + 8;
             }
         }
 
         commentBox.style.top = `${top + overlapOffset}px`;
-    };
+    }
 
     const addToSidebar = (anchorId, text, comment) => {
         const div = document.createElement("div");
@@ -55,10 +120,8 @@ document.addEventListener('DOMContentLoaded', () => {
         document.body.appendChild(div);
         commentBoxes.push({ anchorId, element: div });
 
-        // Force reflow to ensure bounding boxes are valid
         void div.offsetHeight;
 
-        // Sort based on anchor position
         commentBoxes.sort((a, b) => {
             const elA = document.getElementById(a.anchorId);
             const elB = document.getElementById(b.anchorId);
@@ -79,17 +142,17 @@ document.addEventListener('DOMContentLoaded', () => {
             alignCommentBoxToHighlight(anchorId, element);
         });
 
-    };
+     };
 
     window.addEventListener('scroll', () => {
         commentBoxes.forEach(({ anchorId, element }) => alignCommentBoxToHighlight(anchorId, element));
     });
+
     window.addEventListener('resize', () => {
         commentBoxes.forEach(({ anchorId, element }) => alignCommentBoxToHighlight(anchorId, element));
     });
-
-    const postComment = async (pageId, selected, comment) => {
-        const params = new URLSearchParams({ id: pageId, selected, comment });
+    const postComment = async (pageId, selected, before, after, comment) => {
+        const params = new URLSearchParams({ id: pageId, selected, before, after, comment });
 
         try {
             const response = await fetch(DOKU_BASE + "lib/plugins/commentmargin/ajax.php", {
@@ -99,10 +162,12 @@ document.addEventListener('DOMContentLoaded', () => {
             });
 
             const result = await response.json();
-            if (result.success && result.anchor_id) {
-                injectHighlight(result.anchor_id, selected);
-                addToSidebar(result.anchor_id, selected, comment);
-                alert(t("js_saved_success"));
+            //if (result.success && result.anchor_id) {
+            //    injectHighlight(result.anchor_id, selected, before, after);
+            //    addToSidebar(result.anchor_id, selected, comment);
+            //    //alert(t("js_saved_success"));
+            if (result.success) {
+                location.reload(); // force a full reload to re-read comment from backend
             } else {
                 alert(t("js_error") + ": " + (result.error || t("js_unknown_error")));
             }
@@ -111,21 +176,40 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
+    // Load pre-existing comments if available
+    if (Array.isArray(window.COMMENTMARGIN_DATA)) {
+        window.COMMENTMARGIN_DATA.forEach(comment => {
+            const span = injectHighlight(comment.anchor_id, comment.selected, comment.before || null, comment.after || null);
+            if (span) {
+                addToSidebar(comment.anchor_id, comment.selected, comment.text);
+            }
+        });
+    }
+
     const btn = document.getElementById('commentmargin-add-btn');
     if (!btn) return;
 
     btn.addEventListener('click', (e) => {
         e.preventDefault();
-        const selection = window.getSelection().toString().trim();
-        if (selection.length === 0) {
+        const selection = window.getSelection();
+        const selectedText = selection.toString().trim();
+        if (selectedText.length === 0) {
             alert(t("js_select_text"));
             return;
         }
 
-        const comment = prompt(t("js_enter_comment") + "\n" + selection);
+        const range = selection.getRangeAt(0);
+        const node = range.startContainer;
+        const offset = range.startOffset;
+        const full = node.nodeValue || '';
+
+        const before = offset >= 10 ? full.slice(offset - 10, offset) : full.slice(0, offset);
+        const after = full.slice(offset + selectedText.length, offset + selectedText.length + 10);
+
+        const comment = prompt(t("js_enter_comment") + "\n" + selectedText);
         if (!comment) return;
 
         const pageId = window.DOKU_ID;
-        postComment(pageId, selection, comment);
+        postComment(pageId, selectedText, before, after, comment);
     });
 });
