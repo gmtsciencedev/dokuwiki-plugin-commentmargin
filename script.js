@@ -10,32 +10,57 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function injectSpansInRange(range, anchorId) {
-        const contents = range.cloneContents();
-        const walker = document.createTreeWalker(contents, NodeFilter.SHOW_TEXT);
         const spans = [];
+        const textNodes = [];
 
-        while (walker.nextNode()) {
-            const originalText = walker.currentNode.nodeValue;
-            if (originalText.trim()) {
-                const span = document.createElement("span");
-                span.className = "comment-highlight";
-                span.id = spans.length === 0 ? anchorId : `${anchorId}_${spans.length}`;
-                span.textContent = originalText;
-
-                walker.currentNode.parentNode.replaceChild(span, walker.currentNode);
-                spans.push(span);
+        const walker = document.createTreeWalker(
+            range.commonAncestorContainer,
+            NodeFilter.SHOW_TEXT,
+            {
+                acceptNode: node => {
+                    return range.intersectsNode(node) && node.nodeValue.trim()
+                        ? NodeFilter.FILTER_ACCEPT
+                        : NodeFilter.FILTER_REJECT;
+                }
             }
+        );
+
+        // Collect all matching nodes before any modification
+        while (walker.nextNode()) {
+            textNodes.push(walker.currentNode);
         }
 
-        // Insert each child node of the cloned content back in reverse order
-        range.deleteContents();
-        const fragmentChildren = Array.from(contents.childNodes);
-        for (let i = fragmentChildren.length - 1; i >= 0; i--) {
-            range.insertNode(fragmentChildren[i]);
+        let count = 0;
+        for (const textNode of textNodes) {
+            const subrange = document.createRange();
+            subrange.selectNodeContents(textNode);
+
+            if (subrange.compareBoundaryPoints(Range.START_TO_START, range) < 0) {
+                subrange.setStart(range.startContainer, range.startOffset);
+            }
+            if (subrange.compareBoundaryPoints(Range.END_TO_END, range) > 0) {
+                subrange.setEnd(range.endContainer, range.endOffset);
+            }
+
+            const selectedText = subrange.toString();
+            if (!selectedText) continue;
+
+            const span = document.createElement("span");
+            span.className = "comment-highlight";
+            span.id = count === 0 ? anchorId : `${anchorId}_${count}`;
+            span.textContent = selectedText;
+
+            subrange.deleteContents();
+            subrange.insertNode(span);
+            spans.push(span);
+            count++;
         }
 
         return spans;
     }
+
+
+
 
     function findMatchingNodesFromHTML(fragment, root) {
         const fragText = fragment.textContent.trim().replace(/\s+/g, ' ');
