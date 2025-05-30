@@ -9,6 +9,33 @@ document.addEventListener('DOMContentLoaded', () => {
         document.body.appendChild(sidebar);
     }
 
+    function injectSpansInRange(range, anchorId) {
+        const contents = range.cloneContents();
+        const walker = document.createTreeWalker(contents, NodeFilter.SHOW_TEXT);
+        const spans = [];
+
+        while (walker.nextNode()) {
+            const originalText = walker.currentNode.nodeValue;
+            if (originalText.trim()) {
+                const span = document.createElement("span");
+                span.className = "comment-highlight";
+                //span.id = anchorId + "_" + spans.length;
+                span.id = spans.length === 0 ? anchorId : `${anchorId}_${spans.length}`;
+                span.textContent = originalText;
+
+                walker.currentNode.parentNode.replaceChild(span, walker.currentNode);
+                spans.push(span);
+            }
+        }
+
+        // Now insert back into the original range
+        range.deleteContents();
+        range.insertNode(contents);
+        return spans;
+    }
+
+
+
     const injectHighlight = (anchorId, selectedText, before, after, selectedHTML = null) => {
         console.log("Injecting:", { anchorId, selectedText, before, after, selectedHTML });
 
@@ -43,9 +70,16 @@ document.addEventListener('DOMContentLoaded', () => {
             const foundAt = index !== -1 ? index : (indexEncoded !== -1 ? indexEncoded : -1);
 
             if (foundAt !== -1) {
-                const marker = `<span id="${anchorId}" class="comment-highlight">${htmlToFind}</span>`;
-                document.body.innerHTML = html.slice(0, foundAt) + marker + html.slice(foundAt + htmlToFind.length);
-                return document.getElementById(anchorId);
+                const selection = window.getSelection();
+                if (!selection.rangeCount) {
+                    console.warn("injectHighlight: no active selection range");
+                    return null;
+                }
+
+                const range = selection.getRangeAt(0);
+                const spans = injectSpansInRange(range, anchorId);
+
+                return spans[0] || null;
             }
 
             // Fallback: use DOM fuzzy search on textContent
@@ -94,14 +128,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     range.setStart(startNode, startOffset);
                     range.setEnd(endNode, endOffset);
 
-                    const span = document.createElement("span");
-                    span.id = anchorId;
-                    span.className = "comment-highlight";
-                    span.textContent = textToFind;
-
-                    range.deleteContents();
-                    range.insertNode(span);
-                    return span;
+                    const spans = injectSpansInRange(range, anchorId);
+                    return spans[0] || null;
                 }
             }
 
