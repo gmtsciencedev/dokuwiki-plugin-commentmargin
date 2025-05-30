@@ -87,7 +87,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const beforeSafe = before || '';
         const afterSafe = after || '';
 
-        // --- STEP 0: remove the embedded JSON once used
+        // --- STEP 0: Remove embedded JSON if present
         const scriptTag = document.getElementById('commentmargin-data');
         if (scriptTag) {
             try {
@@ -97,7 +97,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
 
-        // --- STEP 1: Try selectedHTML-based injection ---
+        // --- STEP 1: Try exact selectedHTML-based injection ---
         if (selectedHTML) {
             const html = document.body.innerHTML;
 
@@ -115,34 +115,21 @@ document.addEventListener('DOMContentLoaded', () => {
             const foundAt = index !== -1 ? index : (indexEncoded !== -1 ? indexEncoded : -1);
 
             if (foundAt !== -1) {
-                // Create a DOM parser container from selectedHTML
                 const tempDiv = document.createElement("div");
                 tempDiv.innerHTML = htmlToFind;
                 const fragment = tempDiv.cloneNode(true);
 
-                // Try to find the nodes in the actual document that match these HTML elements
                 const match = findMatchingNodesFromHTML(fragment, document.body);
-                if (!match) {
-                    console.warn("injectHighlight: failed to map selectedHTML to live DOM nodes");
-                    return null;
+                if (match && match.startNode && match.endNode) {
+                    const range = document.createRange();
+                    range.setStartBefore(match.startNode);
+                    range.setEndAfter(match.endNode);
+                    const spans = injectSpansInRange(range, anchorId);
+                    return spans[0] || null;
                 }
-
-                const { startNode, endNode } = match;
-                if (!startNode || !endNode) {
-                    console.warn("injectHighlight: could not find full range for selectedHTML");
-                    return null;
-                }
-
-                // Create a range and use injectSpansInRange
-                const range = document.createRange();
-                range.setStartBefore(startNode);
-                range.setEndAfter(endNode);
-
-                const spans = injectSpansInRange(range, anchorId);
-                return spans[0] || null;
             }
 
-            // Fallback: use DOM fuzzy search on textContent
+            // --- STEP 1B: Fuzzy fallback based on selectedHTML.textContent ---
             const temp = document.createElement("div");
             temp.innerHTML = selectedHTML;
             const textToFind = temp.textContent.trim();
@@ -169,6 +156,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 for (const { node } of nodes) {
                     const len = node.nodeValue.length;
+
                     if (!startNode && remainingStart < len) {
                         startNode = node;
                         startOffset = remainingStart;
@@ -187,7 +175,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     const range = document.createRange();
                     range.setStart(startNode, startOffset);
                     range.setEnd(endNode, endOffset);
-
                     const spans = injectSpansInRange(range, anchorId);
                     return spans[0] || null;
                 }
@@ -196,7 +183,7 @@ document.addEventListener('DOMContentLoaded', () => {
             console.warn("injectHighlight: selectedHTML not found using HTML or fallback text match");
         }
 
-        // --- STEP 2: Text-based match ---
+        // --- STEP 2: Text-based match (flattened) ---
         const root = document.body;
         const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
         const textNodes = [];
@@ -234,8 +221,6 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         if (!relaxedMatchBefore || !relaxedMatchAfter) {
-            console.warn("injectHighlight: relaxed context mismatch, attempting fallback");
-
             const allOccurrences = [];
             let pos = 0;
             while (pos < fullText.length) {
@@ -246,7 +231,6 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             if (allOccurrences.length === 1) {
-                console.info("injectHighlight: using fallback injection due to unique match");
                 index = allOccurrences[0];
             } else {
                 console.warn("injectHighlight: ambiguous fallback match — multiple matches");
@@ -254,7 +238,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
 
-        // --- STEP 3: Map offsets back to nodes ---
+        // --- STEP 3: Map back to DOM nodes ---
         let startNode = null, endNode = null;
         let startOffset = 0, endOffset = 0;
         let remainingStart = index;
@@ -277,13 +261,6 @@ document.addEventListener('DOMContentLoaded', () => {
             remainingEnd -= len;
         }
 
-        console.log("Highlight range:", {
-            startNode: startNode?.nodeValue?.slice(0, 30) + "...",
-            startOffset,
-            endNode: endNode?.nodeValue?.slice(0, 30) + "...",
-            endOffset
-        });
-
         if (!startNode || !endNode) {
             console.warn("injectHighlight: failed to map DOM nodes");
             return null;
@@ -298,15 +275,10 @@ document.addEventListener('DOMContentLoaded', () => {
             return null;
         }
 
-        const span = document.createElement("span");
-        span.id = anchorId;
-        span.className = "comment-highlight";
-        span.textContent = selectedText;
-
-        range.deleteContents();
-        range.insertNode(span);
-        return span;
+        const spans = injectSpansInRange(range, anchorId);
+        return spans[0] || null;
     };
+
 
 
 
