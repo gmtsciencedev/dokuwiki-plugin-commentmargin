@@ -401,8 +401,9 @@ document.addEventListener('DOMContentLoaded', () => {
             }).then(res => res.json()).then(result => {
                 if (result.success) {
                     div.remove();
-                    const highlight = document.getElementById(anchorId);
-                    if (highlight) highlight.classList.remove('comment-highlight');
+                    document.querySelectorAll(`.comment-highlight[id^="${anchorId}"]`).forEach(span => {
+                        span.replaceWith(document.createTextNode(span.textContent));
+                    });
                 } else {
                     alert(t("js_error") + ": " + (result.error || t("js_unknown_error")));
                 }
