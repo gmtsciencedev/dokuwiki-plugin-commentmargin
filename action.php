@@ -11,9 +11,10 @@ class action_plugin_commentmargin extends DokuWiki_Action_Plugin {
 
 
     public function register(Doku_Event_Handler $controller) {
+        //$controller->register_hook('FORM_EDIT_OUTPUT', 'BEFORE', $this, 'cleanup_comment_spans_in_editform');
         $controller->register_hook('TPL_METAHEADER_OUTPUT', 'BEFORE', $this, 'inject_translation_script');
         $controller->register_hook('TPL_CONTENT_DISPLAY', 'BEFORE', $this, 'handle_render_comments');
-        $controller->register_hook('TPL_SITE_ACTIONS', 'AFTER', $this, 'handle_site_actions');
+        //$controller->register_hook('TPL_SITE_ACTIONS', 'AFTER', $this, 'handle_site_actions');
         $controller->register_hook('MENU_ITEMS_ASSEMBLY', 'AFTER', $this, 'addsvgbutton');
     }
 
@@ -26,7 +27,7 @@ class action_plugin_commentmargin extends DokuWiki_Action_Plugin {
 
         $json = file_get_contents($file);
         $comments = json_decode($json, true);
-        error_log("LOADED COMMENTS: " . print_r($comments, true));
+        //error_log("LOADED COMMENTS: " . print_r($comments, true));
         return is_array($comments) ? $comments : [];
     }
 
@@ -45,6 +46,11 @@ class action_plugin_commentmargin extends DokuWiki_Action_Plugin {
     public function inject_translation_script(Doku_Event $event, $param) {
         global $ID;
 
+        // Don't inject anything if we're in edit mode
+        if (isset($_REQUEST['do']) && $_REQUEST['do'] === 'edit') {
+            return;
+        }
+
         $translations = [
             'js_select_text' => $this->getLang('js_select_text'),
             'js_enter_comment' => $this->getLang('js_enter_comment'),
@@ -52,16 +58,15 @@ class action_plugin_commentmargin extends DokuWiki_Action_Plugin {
             'js_error' => $this->getLang('js_error'),
             'js_unknown_error' => $this->getLang('js_unknown_error'),
             'js_selection_not_found' => $this->getLang('js_selection_not_found'),
-            "js_edit_comment" => $this->getLang('js_edit_comment'),
-            "js_confirm_delete" => $this->getLang('js_confirm_delete'),
+            'js_edit_comment' => $this->getLang('js_edit_comment'),
+            'js_confirm_delete' => $this->getLang('js_confirm_delete'),
+            'js_lost_comment' => $this->getLang('js_lost_comment'),
         ];
 
-        // Inject language and ID
+        // Inject translations and page ID
         echo '<script>window.COMMENTMARGIN_LANG = ' . json_encode($translations) . ';</script>';
         echo '<script>window.DOKU_ID = ' . json_encode($ID) . ';</script>';
 
-        // Also inject script and CSS here — ONLY here
-        //echo '<script src="' . DOKU_BASE . 'lib/plugins/commentmargin/script.js"></script>';
         echo '<link rel="stylesheet" href="' . DOKU_BASE . 'lib/plugins/commentmargin/style.css">';
     }
     
@@ -71,6 +76,11 @@ class action_plugin_commentmargin extends DokuWiki_Action_Plugin {
      */
     public function handle_render_comments(Doku_Event $event, $param) {
         global $ID;
+        global $ACT;
+        if ($ACT !== 'show') {
+            // Do nothing if not in 'show' mode
+            return;
+        }
 
         $html = & $event->data;
         $comments = $this->loadComments($ID);

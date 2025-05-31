@@ -8,3 +8,4 @@ $lang['js_unknown_error'] = 'Unknown error';
 $lang['js_selection_not_found'] = "The selected text could not be found in the page. Please refine your selection.";
 $lang['js_edit_comment'] = 'Edit comment';
 $lang['js_confirm_delete'] = 'Are you sure you want to delete this comment?';
+$lang['js_lost_comment'] = "Unanchored comment (text not found on page)";

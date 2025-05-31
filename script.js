@@ -1,4 +1,10 @@
+// Avoid redeclaration if script is loaded multiple times
+window.urlParams = window.urlParams || new URLSearchParams(window.location.search);
+const isEditMode = window.urlParams.get("do") === "edit";
+
 document.addEventListener('DOMContentLoaded', () => {
+    if (isEditMode) return;
+
     const t = key => window.COMMENTMARGIN_LANG?.[key] || key;
     const commentBoxes = [];
 
@@ -433,6 +439,26 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     };
 
+    // Add a lost comment paragraph if the anchor ID was not found
+    function addLostCommentParagraph(comment) {
+        const container = document.createElement("div");
+        container.className = "lost-comment";
+        container.style.border = "1px dashed #c00";
+        container.style.margin = "2em 0";
+        container.style.padding = "1em";
+        container.style.background = "#fff5f5";
+
+        const title = document.createElement("strong");
+        title.textContent = t("js_lost_comment");
+        container.appendChild(title);
+
+        const para = document.createElement("p");
+        para.textContent = `"${comment.selected}" → ${comment.text}`;
+        container.appendChild(para);
+
+        document.body.appendChild(container);
+    }
+
     window.addEventListener('scroll', () => {
         commentBoxes.forEach(({ anchorId, element }) => alignCommentBoxToHighlight(anchorId, element));
     });
@@ -553,6 +579,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const span = injectHighlight(comment.anchor_id, comment.selected, comment.before || null, comment.after || null, comment.selected_html || null);
             if (span) {
                 addToSidebar(comment.anchor_id, comment.selected, comment.text);
+            } else {
+                addLostCommentParagraph(comment);
             }
         });
     }
