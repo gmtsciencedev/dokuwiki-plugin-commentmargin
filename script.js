@@ -372,8 +372,27 @@ document.addEventListener('DOMContentLoaded', () => {
         commentBoxes.push({ anchorId, element: div });
 
         div.querySelector('.comment-edit').addEventListener('click', () => {
-            const newText = prompt(t("js_edit_comment"), comment);
-            if (newText && newText !== comment) {
+            const commentTextEl = div.querySelector('.comment-text');
+            const oldText = commentTextEl.textContent;
+            
+            const textarea = document.createElement('textarea');
+            textarea.value = oldText;
+            textarea.className = "comment-edit-field";
+            textarea.style.width = "100%";
+            textarea.style.boxSizing = "border-box";
+
+            // Replace the paragraph with textarea
+            commentTextEl.replaceWith(textarea);
+            textarea.focus();
+
+            // Handle blur/save
+            textarea.addEventListener('blur', () => {
+                const newText = textarea.value.trim();
+                if (!newText || newText === oldText) {
+                    textarea.replaceWith(commentTextEl); // no change
+                    return;
+                }
+
                 fetch(DOKU_BASE + "lib/plugins/commentmargin/ajax.php", {
                     method: "POST",
                     headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -385,13 +404,18 @@ document.addEventListener('DOMContentLoaded', () => {
                     })
                 }).then(res => res.json()).then(result => {
                     if (result.success) {
-                        div.querySelector('.comment-text').textContent = newText;
+                        const newPara = document.createElement("p");
+                        newPara.className = "comment-text";
+                        newPara.textContent = newText;
+                        textarea.replaceWith(newPara);
                     } else {
                         alert(t("js_error") + ": " + (result.error || t("js_unknown_error")));
+                        textarea.replaceWith(commentTextEl);
                     }
                 });
-            }
+            });
         });
+
 
         div.querySelector('.comment-delete').addEventListener('click', () => {
             if (!confirm(t("js_confirm_delete"))) return;
@@ -456,7 +480,12 @@ document.addEventListener('DOMContentLoaded', () => {
         para.textContent = `"${comment.selected}" → ${comment.text}`;
         container.appendChild(para);
 
-        document.body.appendChild(container);
+        const mainPageDiv = document.querySelector("div.page.group");
+        if (mainPageDiv) {
+            mainPageDiv.appendChild(container);
+        } else {
+            document.body.appendChild(container); // fallback
+        }
     }
 
     window.addEventListener('scroll', () => {
