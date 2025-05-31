@@ -396,6 +396,15 @@ document.addEventListener('DOMContentLoaded', () => {
                     textarea.style.width = "100%";
                     textarea.style.boxSizing = "border-box";
 
+                    // Estimate number of rows based on line breaks or character length
+                    const avgLineLength = 40; // narrower layout, ~40 chars per line
+                    const lineCountFromLength = Math.ceil(oldText.length / avgLineLength);
+                    const lineCountFromBreaks = oldText.split(/\r\n|\r|\n/).length;
+
+                    const estimatedRows = Math.max(lineCountFromBreaks, lineCountFromLength);
+
+                    textarea.rows = Math.min(Math.max(estimatedRows, 3), 20); // allow up to 20 rows
+
                     commentTextEl.replaceWith(textarea);
                     textarea.focus();
 
