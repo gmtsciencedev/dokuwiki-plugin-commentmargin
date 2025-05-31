@@ -52,6 +52,8 @@ class action_plugin_commentmargin extends DokuWiki_Action_Plugin {
             'js_error' => $this->getLang('js_error'),
             'js_unknown_error' => $this->getLang('js_unknown_error'),
             'js_selection_not_found' => $this->getLang('js_selection_not_found'),
+            "js_edit_comment" => $this->getLang('js_edit_comment'),
+            "js_confirm_delete" => $this->getLang('js_confirm_delete'),
         ];
 
         // Inject language and ID

@@ -352,9 +352,62 @@ document.addEventListener('DOMContentLoaded', () => {
     const addToSidebar = (anchorId, text, comment) => {
         const div = document.createElement("div");
         div.className = "comment-box";
-        div.innerHTML = `<a href="#${anchorId}">${text}</a><p>${comment}</p>`;
+
+        div.innerHTML = `
+            <a href="#${anchorId}">${text}</a>
+            <p class="comment-text">${comment}</p>
+            <div class="comment-actions">
+                <button class="comment-edit">✏️</button>
+                <button class="comment-delete">🗑️</button>
+            </div>
+        `;
+
         document.body.appendChild(div);
         commentBoxes.push({ anchorId, element: div });
+
+        div.querySelector('.comment-edit').addEventListener('click', () => {
+            const newText = prompt(t("js_edit_comment"), comment);
+            if (newText && newText !== comment) {
+                fetch(DOKU_BASE + "lib/plugins/commentmargin/ajax.php", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+                    body: new URLSearchParams({
+                        id: window.DOKU_ID,
+                        action: "update",
+                        anchor_id: anchorId,
+                        new_text: newText
+                    })
+                }).then(res => res.json()).then(result => {
+                    if (result.success) {
+                        div.querySelector('.comment-text').textContent = newText;
+                    } else {
+                        alert(t("js_error") + ": " + (result.error || t("js_unknown_error")));
+                    }
+                });
+            }
+        });
+
+        div.querySelector('.comment-delete').addEventListener('click', () => {
+            if (!confirm(t("js_confirm_delete"))) return;
+
+            fetch(DOKU_BASE + "lib/plugins/commentmargin/ajax.php", {
+                method: "POST",
+                headers: { "Content-Type": "application/x-www-form-urlencoded" },
+                body: new URLSearchParams({
+                    id: window.DOKU_ID,
+                    action: "delete",
+                    anchor_id: anchorId
+                })
+            }).then(res => res.json()).then(result => {
+                if (result.success) {
+                    div.remove();
+                    const highlight = document.getElementById(anchorId);
+                    if (highlight) highlight.classList.remove('comment-highlight');
+                } else {
+                    alert(t("js_error") + ": " + (result.error || t("js_unknown_error")));
+                }
+            });
+        });
 
         void div.offsetHeight;
 
@@ -370,15 +423,14 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         commentBoxes.forEach(({ element }) => {
-            document.body.appendChild(element); // move in DOM to match sort order
-            element.style.top = ''; // reset position to avoid stale overlap
+            document.body.appendChild(element);
+            element.style.top = '';
         });
 
         commentBoxes.forEach(({ anchorId, element }) => {
             alignCommentBoxToHighlight(anchorId, element);
         });
-
-     };
+    };
 
     window.addEventListener('scroll', () => {
         commentBoxes.forEach(({ anchorId, element }) => alignCommentBoxToHighlight(anchorId, element));
@@ -423,6 +475,59 @@ document.addEventListener('DOMContentLoaded', () => {
             alert(t("js_error") + ": " + err.message);
         }
     };
+
+    async function updateComment(anchorId, newText) {
+        try {
+            const params = new URLSearchParams({
+                action: "update",
+                anchor_id: anchorId,
+                new_text: newText,
+                id: window.DOKU_ID
+            });
+
+            const response = await fetch(DOKU_BASE + "lib/plugins/commentmargin/ajax.php", {
+                method: "POST",
+                headers: { "Content-Type": "application/x-www-form-urlencoded" },
+                body: params.toString()
+            });
+
+            const result = await response.json();
+            if (result.success) {
+                location.reload();
+            } else {
+                alert(t("js_error") + ": " + (result.error || t("js_unknown_error")));
+            }
+        } catch (err) {
+            alert(t("js_error") + ": " + err.message);
+        }
+    }
+
+    async function deleteComment(anchorId) {
+        try {
+            const params = new URLSearchParams({
+                action: "delete",
+                anchor_id: anchorId,
+                id: window.DOKU_ID
+            });
+
+            const response = await fetch(DOKU_BASE + "lib/plugins/commentmargin/ajax.php", {
+                method: "POST",
+                headers: { "Content-Type": "application/x-www-form-urlencoded" },
+                body: params.toString()
+            });
+
+            const result = await response.json();
+            if (result.success) {
+                location.reload();
+            } else {
+                alert(t("js_error") + ": " + (result.error || t("js_unknown_error")));
+            }
+        } catch (err) {
+            alert(t("js_error") + ": " + err.message);
+        }
+    }
+
+
 
     // Load pre-existing comments if available
     function loadCommentData() {
