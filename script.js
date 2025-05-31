@@ -1,6 +1,7 @@
 // Avoid redeclaration if script is loaded multiple times
 window.urlParams = window.urlParams || new URLSearchParams(window.location.search);
 const isEditMode = window.urlParams.get("do") === "edit";
+let editingInProgress = false;
 
 document.addEventListener('DOMContentLoaded', () => {
     if (isEditMode) return;
@@ -363,7 +364,7 @@ document.addEventListener('DOMContentLoaded', () => {
             <a href="#${anchorId}">${text}</a>
             <p class="comment-text">${comment}</p>
             <div class="comment-actions">
-                <button class="comment-edit">✏️</button>
+                <button class="comment-edit" data-mode="edit">✏️</button>
                 <button class="comment-delete">🗑️</button>
             </div>
         `;
@@ -371,49 +372,70 @@ document.addEventListener('DOMContentLoaded', () => {
         document.body.appendChild(div);
         commentBoxes.push({ anchorId, element: div });
 
-        div.querySelector('.comment-edit').addEventListener('click', () => {
-            const commentTextEl = div.querySelector('.comment-text');
-            const oldText = commentTextEl.textContent;
-            
-            const textarea = document.createElement('textarea');
-            textarea.value = oldText;
-            textarea.className = "comment-edit-field";
-            textarea.style.width = "100%";
-            textarea.style.boxSizing = "border-box";
+        let ignoreNextClick = false;
 
-            // Replace the paragraph with textarea
-            commentTextEl.replaceWith(textarea);
-            textarea.focus();
+        const editBtn = div.querySelector('.comment-edit');
+        editBtn.addEventListener('mousedown', (e) => {
+            e.preventDefault(); // prevent default focus behavior
+            console.log("[mousedown] triggered");
+            console.log("activeElement before blur:", document.activeElement);
 
-            // Handle blur/save
-            textarea.addEventListener('blur', () => {
-                const newText = textarea.value.trim();
-                if (!newText || newText === oldText) {
-                    textarea.replaceWith(commentTextEl); // no change
-                    return;
-                }
+            const textarea = div.querySelector('textarea.comment-edit-field');
+            if (textarea) {
+                textarea.blur();
+            } else {
+                // Defer edit mode setup until after native event stack
+                setTimeout(() => {
+                    console.log("→ Entering edit mode");
+                    const commentTextEl = div.querySelector('.comment-text');
+                    const oldText = commentTextEl.textContent;
 
-                fetch(DOKU_BASE + "lib/plugins/commentmargin/ajax.php", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-                    body: new URLSearchParams({
-                        id: window.DOKU_ID,
-                        action: "update",
-                        anchor_id: anchorId,
-                        new_text: newText
-                    })
-                }).then(res => res.json()).then(result => {
-                    if (result.success) {
-                        const newPara = document.createElement("p");
-                        newPara.className = "comment-text";
-                        newPara.textContent = newText;
-                        textarea.replaceWith(newPara);
-                    } else {
-                        alert(t("js_error") + ": " + (result.error || t("js_unknown_error")));
-                        textarea.replaceWith(commentTextEl);
-                    }
-                });
-            });
+                    const textarea = document.createElement('textarea');
+                    textarea.value = oldText;
+                    textarea.className = "comment-edit-field";
+                    textarea.style.width = "100%";
+                    textarea.style.boxSizing = "border-box";
+
+                    commentTextEl.replaceWith(textarea);
+                    textarea.focus();
+
+                    editBtn.textContent = "💾";
+
+                    textarea.addEventListener('blur', () => {
+                        const newText = textarea.value.trim();
+                        editBtn.textContent = "✏️";
+
+                        if (!newText || newText === oldText) {
+                            textarea.replaceWith(commentTextEl);
+                            return;
+                        }
+
+                        fetch(DOKU_BASE + "lib/plugins/commentmargin/ajax.php", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/x-www-form-urlencoded" },
+                            body: new URLSearchParams({
+                                id: window.DOKU_ID,
+                                action: "update",
+                                anchor_id: anchorId,
+                                new_text: newText
+                            })
+                        }).then(res => res.json()).then(result => {
+                            if (result.success) {
+                                const newPara = document.createElement("p");
+                                newPara.className = "comment-text";
+                                newPara.textContent = newText;
+                                textarea.replaceWith(newPara);
+                            } else {
+                                alert(t("js_error") + ": " + (result.error || t("js_unknown_error")));
+                                textarea.replaceWith(commentTextEl);
+                            }
+                        }).catch(err => {
+                            alert(t("js_error") + ": " + err.message);
+                            textarea.replaceWith(commentTextEl);
+                        });
+                    });
+                }, 0);
+            }
         });
 
 
@@ -480,11 +502,36 @@ document.addEventListener('DOMContentLoaded', () => {
         para.textContent = `"${comment.selected}" → ${comment.text}`;
         container.appendChild(para);
 
+        // Add delete button
+        const deleteBtn = document.createElement("button");
+        deleteBtn.textContent = "🗑️";
+        deleteBtn.style.marginLeft = "1em";
+        deleteBtn.addEventListener("click", () => {
+            if (!confirm(t("js_confirm_delete"))) return;
+
+            fetch(DOKU_BASE + "lib/plugins/commentmargin/ajax.php", {
+                method: "POST",
+                headers: { "Content-Type": "application/x-www-form-urlencoded" },
+                body: new URLSearchParams({
+                    id: window.DOKU_ID,
+                    action: "delete",
+                    anchor_id: comment.anchor_id
+                })
+            }).then(res => res.json()).then(result => {
+                if (result.success) {
+                    container.remove();
+                } else {
+                    alert(t("js_error") + ": " + (result.error || t("js_unknown_error")));
+                }
+            });
+        });
+        container.appendChild(deleteBtn);
+
         const mainPageDiv = document.querySelector("div.page.group");
         if (mainPageDiv) {
             mainPageDiv.appendChild(container);
         } else {
-            document.body.appendChild(container); // fallback
+            document.body.appendChild(container);
         }
     }
 
