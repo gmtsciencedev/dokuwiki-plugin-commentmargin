@@ -68,3 +68,8 @@
 .action.commentmargin svg {
   fill: currentColor;
 }
+
+#dokuwiki__content.has-comments {
+    margin-right: 8% !important;
+    width: 92% !important;
+}

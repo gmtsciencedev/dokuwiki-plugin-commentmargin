@@ -660,6 +660,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const COMMENTMARGIN_DATA = loadCommentData();
 
     if (Array.isArray(COMMENTMARGIN_DATA)) {
+        if (COMMENTMARGIN_DATA.length > 0) {
+            const content = document.getElementById("dokuwiki__content");
+            if (content) content.classList.add("has-comments");
+        }
         COMMENTMARGIN_DATA.forEach(comment => {
             const span = injectHighlight(comment.anchor_id, comment.selected, comment.before || null, comment.after || null, comment.selected_html || null);
             if (span) {
